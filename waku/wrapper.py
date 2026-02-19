@@ -1,52 +1,75 @@
+import json
 from cffi import FFI
 from pathlib import Path
-import json
 
-
-config = {
-    "relay": True,
-    "discv5Discovery": True,
-    "peerExchange": True,
-    "clusterId": 3,
-    "shard": 0,
-    "rlnRelay": False
-}
-config_json1 = json.dumps(config)
 ffi = FFI()
+
+ffi.cdef("""
+typedef void (*FFICallBack)(int callerRet, const char *msg, size_t len, void *userData);
+
+void *logosdelivery_create_node(
+    const char *configJson,
+    FFICallBack callback,
+    void *userData
+);
+
+int logosdelivery_start_node(
+    void *ctx,
+    FFICallBack callback,
+    void *userData
+);
+""")
 
 _repo_root = Path(__file__).resolve().parents[1]
 lib = ffi.dlopen(str(_repo_root / "lib" / "liblogosdelivery.so"))
 
-ffi.cdef("""
-    typedef void (*FFICallBack)(int callerRet, const char *msg, size_t len, void *userData);
-
-    void *logosdelivery_create_node(
-        const char *configJson,
-        FFICallBack callback,
-        void *userData
-    );
-""")
-
-def process_callback(ret, char_p, length, callback):
-    byte_string = ffi.buffer(char_p, length)[:] if char_p != ffi.NULL and length else b""
-    callback(ret, byte_string)
-
 CallbackType = ffi.callback("void(int, const char*, size_t, void*)")
 
-def logosdelivery_create_node(config_json, callback):
-    def cb(ret, char_p, length, userData):
-        process_callback(ret, char_p, length, callback)
+class NodeHandle:
+    def __init__(self, ctx, cb_handle):
+        self.ctx = ctx
+        self._cb_handle = cb_handle  # keep callback alive
 
-    return lib.logosdelivery_create_node(
-        config_json.encode("utf-8"),
-        CallbackType(cb),
-        ffi.cast("void*", 0),
+def logosdelivery_create_node(config: dict, py_callback):
+    config_json = json.dumps(config, separators=(",", ":"), ensure_ascii=False)
+    cnfig_bytes = config_json.encode("utf-8")
+
+    def c_cb(ret, char_p, length, userData):
+        if char_p != ffi.NULL and length :
+            msg = ffi.buffer(char_p, length)[:]
+        else :
+            msg = b""
+        py_callback(ret, msg)
+
+    cb_handle = CallbackType(c_cb)
+    ctx = lib.logosdelivery_create_node(
+        cnfig_bytes,
+        cb_handle,
+        ffi.NULL,
     )
+    return NodeHandle(ctx, cb_handle)
 
 if __name__ == "__main__":
+    config = {
+        "logLevel": "DEBUG",
+        "mode": "Core",
+        "protocolsConfig": {
+            "entryNodes": [
+                "/dns4/node-01.do-ams3.misc.logos-chat.status.im/tcp/30303/p2p/16Uiu2HAkxoqUTud5LUPQBRmkeL2xP4iKx2kaABYXomQRgmLUgf78"
+            ],
+            "clusterId": 3,
+            "autoShardingConfig": {"numShardsInCluster": 8},
+        },
+        "networkingConfig": {
+            "listenIpv4": "0.0.0.0",
+            "p2pTcpPort": 60000,
+            "discv5UdpPort": 9000,
+        },
+    }
+
     def cb(ret, msg):
         print("ret:", ret)
         print("msg:", msg)
 
-    ctx = logosdelivery_create_node(config_json1, cb)
-    print("ctx:", ctx)
+    h = logosdelivery_create_node(config, cb)
+    print("ctx:", h.ctx)
