@@ -163,41 +163,17 @@ class NodeWrapper:
 
         return int(ret)
 
+    def set_event_callback(self, py_callback):
+        def c_cb(ret, char_p, length, userData):
+            msg = ffi.buffer(char_p, length)[:]
+            py_callback(ret, msg)
 
-if __name__ == "__main__":
-    config = {
-        "logLevel": "DEBUG",
-        "mode": "Core",
-        "protocolsConfig": {
-            "entryNodes": [
-                "/dns4/node-01.do-ams3.misc.logos-chat.status.im/tcp/30303/p2p/16Uiu2HAkxoqUTud5LUPQBRmkeL2xP4iKx2kaABYXomQRgmLUgf78"
-            ],
-            "clusterId": 42,
-            "autoShardingConfig": {"numShardsInCluster": 8},
-        },
-        "networkingConfig": {
-            "listenIpv4": "0.0.0.0",
-            "p2pTcpPort": 60000,
-            "discv5UdpPort": 9000,
-        },
-    }
+        cb = CallbackType(c_cb)
 
-    def cb(ret, msg):
-        print("ret:", ret, "msg:", msg)
+        lib.logosdelivery_set_event_callback(
+            self.ctx,
+            cb,
+            ffi.NULL,
+        )
 
-    node = NodeWrapper.create_node(config, cb)
-    rc = node.start_node(cb)
-    print("start rc:", rc)
-
-    topic = "/myapp/1/chat/proto"
-    rc = node.subscribe(topic, cb)
-    print("subscribe rc:", rc)
-
-    rc = node.unsubscribe(topic, cb)
-    print("unsubscribe rc:", rc)
-
-    rc = node.stop_node(cb)
-    print("stop rc:", rc)
-
-    rc = node.destroy(cb)
-    print("destroy rc:", rc)
+        self._event_cb_handler = cb
