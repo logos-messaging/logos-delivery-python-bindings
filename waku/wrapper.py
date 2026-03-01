@@ -57,7 +57,6 @@ lib = ffi.dlopen(str(_repo_root / "lib" / "liblogosdelivery.so"))
 
 CallbackType = ffi.callback("void(int, const char*, size_t, void*)")
 
-
 class NodeWrapper:
     def __init__(self, ctx, config_buffer):
         self.ctx = ctx
