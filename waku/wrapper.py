@@ -94,17 +94,22 @@ class NodeWrapper:
         self._event_cb_handler = event_cb_handler
 
     @staticmethod
-    def _make_cb(py_callback, state=None):
+    def _make_waiting_cb(state):
         def c_cb(ret, char_p, length, userData):
-            msg = ffi.buffer(char_p, length)[:]
+            msg = ffi.buffer(char_p, length)[:] if char_p != ffi.NULL else b""
 
-            if state is not None and not state["done"].is_set():
+            if not state["done"].is_set():
                 state["ret"] = int(ret)
                 state["msg"] = msg
                 state["done"].set()
 
-            if py_callback is not None:
-                py_callback(int(ret), msg)
+        return CallbackType(c_cb)
+
+    @staticmethod
+    def _make_event_cb(py_callback):
+        def c_cb(ret, char_p, length, userData):
+            msg = ffi.buffer(char_p, length)[:] if char_p != ffi.NULL else b""
+            py_callback(int(ret), msg)
 
         return CallbackType(c_cb)
 
@@ -112,7 +117,6 @@ class NodeWrapper:
     def create_node(
         cls,
         config: dict,
-        create_cb=None,
         event_cb=None,
         *,
         timeout_s: float = 20.0,
@@ -121,11 +125,11 @@ class NodeWrapper:
         config_buffer = ffi.new("char[]", config_json.encode("utf-8"))
 
         state = _new_cb_state()
-        create_c_cb = cls._make_cb(create_cb, state)
+        create_cb = cls._make_waiting_cb(state)
 
         ctx = lib.logosdelivery_create_node(
             config_buffer,
-            create_c_cb,
+            create_cb,
             ffi.NULL,
         )
 
@@ -136,7 +140,7 @@ class NodeWrapper:
 
         event_cb_handler = None
         if event_cb is not None:
-            event_cb_handler = cls._make_cb(event_cb, state=None)
+            event_cb_handler = cls._make_event_cb(event_cb)
             lib.logosdelivery_set_event_callback(
                 ctx,
                 event_cb_handler,
@@ -145,55 +149,69 @@ class NodeWrapper:
 
         return cls(ctx, config_buffer, event_cb_handler)
 
-    def start_node(self, start_cb=None, *, timeout_s: float = 20.0):
-        state = _new_cb_state()
-        cb = self._make_cb(start_cb, state)
+    @classmethod
+    def create_and_start(
+        cls,
+        config: dict,
+        event_cb=None,
+        *,
+        timeout_s: float = 20.0,
+    ):
+        node = cls.create_node(
+            config=config,
+            event_cb=event_cb,
+            timeout_s=timeout_s,
+        )
+        node.start_node(timeout_s=timeout_s)
+        return node
 
-        rc = int(lib.logosdelivery_start_node(self.ctx, cb, ffi.NULL))
+    def start_node(self, *, timeout_s: float = 20.0):
+        state = _new_cb_state()
+        cb = self._make_waiting_cb(state)
+
+        rc = lib.logosdelivery_start_node(self.ctx, cb, ffi.NULL)
         if rc != 0:
             raise RuntimeError(f"start_node: immediate call failed (ret={rc})")
 
         _wait_cb(state, "start_node", timeout_s)
         return 0
 
-    def stop_node(self, stop_cb=None, *, timeout_s: float = 20.0):
+    def stop_node(self, *, timeout_s: float = 20.0):
         state = _new_cb_state()
-        cb = self._make_cb(stop_cb, state)
+        cb = self._make_waiting_cb(state)
 
-        rc = int(lib.logosdelivery_stop_node(self.ctx, cb, ffi.NULL))
+        rc = lib.logosdelivery_stop_node(self.ctx, cb, ffi.NULL)
         if rc != 0:
             raise RuntimeError(f"stop_node: immediate call failed (ret={rc})")
 
         _wait_cb(state, "stop_node", timeout_s)
         return 0
 
-    def destroy(self, destroy_cb=None, *, timeout_s: float = 20.0):
+    def destroy(self, *, timeout_s: float = 20.0):
         state = _new_cb_state()
-        cb = self._make_cb(destroy_cb, state)
+        cb = self._make_waiting_cb(state)
 
-        rc = int(lib.logosdelivery_destroy(self.ctx, cb, ffi.NULL))
+        rc = lib.logosdelivery_destroy(self.ctx, cb, ffi.NULL)
         if rc != 0:
             raise RuntimeError(f"destroy: immediate call failed (ret={rc})")
 
         _wait_cb(state, "destroy", timeout_s)
         return 0
 
-    def stop_and_destroy(self, cb=None, *, timeout_s: float = 20.0):
-        self.stop_node(stop_cb=cb, timeout_s=timeout_s)
-        self.destroy(destroy_cb=cb, timeout_s=timeout_s)
+    def stop_and_destroy(self, *, timeout_s: float = 20.0):
+        self.stop_node(timeout_s=timeout_s)
+        self.destroy(timeout_s=timeout_s)
         return 0
 
-    def subscribe_content_topic(self, content_topic: str, subscribe_cb=None, *, timeout_s: float = 20.0):
+    def subscribe_content_topic(self, content_topic: str, *, timeout_s: float = 20.0):
         state = _new_cb_state()
-        cb = self._make_cb(subscribe_cb, state)
+        cb = self._make_waiting_cb(state)
 
-        rc = int(
-            lib.logosdelivery_subscribe(
-                self.ctx,
-                cb,
-                ffi.NULL,
-                content_topic.encode("utf-8"),
-            )
+        rc = lib.logosdelivery_subscribe(
+            self.ctx,
+            cb,
+            ffi.NULL,
+            content_topic.encode("utf-8"),
         )
         if rc != 0:
             raise RuntimeError(f"subscribe_content_topic: immediate call failed (ret={rc})")
@@ -201,20 +219,19 @@ class NodeWrapper:
         _wait_cb(state, f"subscribe({content_topic})", timeout_s)
         return 0
 
-    def unsubscribe_content_topic(self, content_topic: str, unsubscribe_cb=None, *, timeout_s: float = 20.0):
+    def unsubscribe_content_topic(self, content_topic: str, *, timeout_s: float = 20.0):
         state = _new_cb_state()
-        cb = self._make_cb(unsubscribe_cb, state)
+        cb = self._make_waiting_cb(state)
 
-        rc = int(
-            lib.logosdelivery_unsubscribe(
-                self.ctx,
-                cb,
-                ffi.NULL,
-                content_topic.encode("utf-8"),
-            )
+        rc = lib.logosdelivery_unsubscribe(
+            self.ctx,
+            cb,
+            ffi.NULL,
+            content_topic.encode("utf-8"),
         )
         if rc != 0:
             raise RuntimeError(f"unsubscribe_content_topic: immediate call failed (ret={rc})")
 
         _wait_cb(state, f"unsubscribe({content_topic})", timeout_s)
+
         return 0
