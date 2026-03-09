@@ -82,17 +82,15 @@ Then, follow the following steps from the root folder
 to rebuild the `libwaku.so` library:
 
 ```bash
-cd vendor/nwaku
+cd vendor/liblogosdelivery
 ```
 ```bash
-make libwaku -j8
+make liblogosdelivery -j8
 ```
 ```bash
 cd ../../
 ```
 ```bash
-cp vendor/nwaku/build/libwaku.so lib/
+cp vendor/liblogosdelivery/build/liblogosdelivery.so lib/
 ```
 
-Notice that the `libwaku.so` library is also distributed within
-the `Py-Waku` package.
