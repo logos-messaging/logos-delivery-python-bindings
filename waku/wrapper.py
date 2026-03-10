@@ -56,6 +56,13 @@ int logosdelivery_unsubscribe(
     void *userData,
     const char *contentTopic
 );
+
+int logosdelivery_send(
+    void *ctx,
+    FFICallBack callback,
+    void *userData,
+    const char *messageJson
+);
 """
 )
 
@@ -243,3 +250,20 @@ class NodeWrapper:
             return Err(f"unsubscribe_content_topic: immediate call failed (ret={rc})")
 
         return _wait_cb(state, f"unsubscribe({content_topic})", timeout_s)
+
+    def send_message(self, message: dict, *, timeout_s: float = 20.0) -> Result[int, str]:
+        state = _new_cb_state()
+        cb = self._make_waiting_cb(state)
+
+        message_json = json.dumps(message, separators=(",", ":"), ensure_ascii=False)
+
+        rc = lib.logosdelivery_send(
+            self.ctx,
+            cb,
+            ffi.NULL,
+            message_json.encode("utf-8"),
+        )
+        if rc != 0:
+            return Err(f"send_message: immediate call failed (ret={rc})")
+
+        return _wait_cb(state, "send_message", timeout_s)
