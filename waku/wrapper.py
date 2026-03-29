@@ -1,10 +1,12 @@
 import json
 import threading
 import logging
+from time import sleep
+
 from cffi import FFI
 from pathlib import Path
 from result import Result, Ok, Err
-
+import time
 logger = logging.getLogger(__name__)
 
 ffi = FFI()
@@ -257,13 +259,62 @@ class NodeWrapper:
 
         message_json = json.dumps(message, separators=(",", ":"), ensure_ascii=False)
 
-        rc = lib.logosdelivery_send(
+        request_id = lib.logosdelivery_send(
             self.ctx,
             cb,
             ffi.NULL,
             message_json.encode("utf-8"),
         )
-        if rc != 0:
-            return Err(f"send_message: immediate call failed (ret={rc})")
 
-        return _wait_cb(state, "send_message", timeout_s)
+        if request_id < 0:
+            return Err(f"send_message: immediate call failed (ret={request_id})")
+
+        wait_result = _wait_cb(state, "send_message", timeout_s)
+        if wait_result.is_err():
+            return Err(wait_result.err())
+
+        return Ok(request_id)
+
+def main():
+    config = {
+        "logLevel": "DEBUG",
+        "mode": "Core",
+        "protocolsConfig": {
+            "entryNodes": [
+                "/dns4/node-01.do-ams3.misc.logos-chat.status.im/tcp/30303/p2p/16Uiu2HAkxoqUTud5LUPQBRmkeL2xP4iKx2kaABYXomQRgmLUgf78"
+            ],
+            "clusterId": 3,
+            "autoShardingConfig": {"numShardsInCluster": 8},
+        },
+        "networkingConfig": {
+            "listenIpv4": "0.0.0.0",
+            "p2pTcpPort": 60000,
+            "discv5UdpPort": 9000,
+        },
+    }
+
+    topic = "/test/1/chat/proto"
+
+    message = {
+        "contentTopic": topic,
+        "payload": "SGVsbG8=",
+        "ephemeral": False,
+    }
+
+    node_result = NodeWrapper.create_and_start(config)
+    sleep(20)
+    if node_result.is_err():
+        print(node_result.err())
+        return
+
+    node = node_result.ok_value
+
+    print(node.subscribe_content_topic(topic))
+    #print(node.send_message(message))
+
+    print(node.stop_node())
+    print(node.destroy())
+
+
+if __name__ == "__main__":
+    main()
