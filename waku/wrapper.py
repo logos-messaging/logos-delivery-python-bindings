@@ -78,6 +78,12 @@ int logosdelivery_get_node_info(
     void *userData,
     const char *nodeInfoId
 );
+
+int logosdelivery_get_available_configs(
+    void *ctx,
+    FFICallBack callback,
+    void *userData
+);
 """
 )
 
@@ -333,48 +339,40 @@ class NodeWrapper:
         )
 
         if rc < 0:
-            return Err(f"get_node_info: immediate call failed (ret={rc})")
+            return Err(f"call failed rc={rc}")
 
-        wait_result = _wait_cb_raw(state, "get_node_info", timeout_s)
+        wait = _wait_cb_raw(state, "get_node_info", timeout_s)
+        if wait.is_err():
+            return Err(wait.err())
+
+        cb_ret, cb_msg = wait.ok_value
+        if cb_ret != 0 or not cb_msg:
+            return Err(f"callback failed ret={cb_ret}")
+
+        try:
+            return Ok(json.loads(cb_msg.decode()))
+        except Exception:
+
+            return Err("invalid json")
+
+    def get_available_configs(self, *, timeout_s: float = 20.0) -> Result[bytes, str]:
+        state = _new_cb_state()
+        cb = self._make_waiting_cb(state)
+
+        rc = lib.logosdelivery_get_available_configs(self.ctx, cb, ffi.NULL)
+        if rc != 0:
+            return Err(f"get_available_configs failed: {rc}")
+
+        wait_result = _wait_cb_raw(state, "get_available_configs", timeout_s)
         if wait_result.is_err():
             return Err(wait_result.err())
 
         cb_ret, cb_msg = wait_result.ok_value
         if cb_ret != 0:
-            return Err(f"get_node_info: failed (ret={cb_ret}) msg={cb_msg!r}")
+            return Err(f"get_available_configs failed: {cb_ret}")
 
-        if not cb_msg:
-            return Err("get_node_info: empty response")
+        return Ok(cb_msg)
 
-        try:
-            result = json.loads(cb_msg.decode("utf-8"))
-        except Exception as e:
-            return Err(f"get_node_info: failed to parse response: {e}")
-
-        return Ok(result)
-
-    def debug_get_node_info(self, node_info_id: str, *, timeout_s: float = 20.0) -> Result[tuple, str]:
-        state = _new_cb_state()
-        cb = self._make_waiting_cb(state)
-
-        rc = lib.logosdelivery_get_node_info(
-            self.ctx,
-            cb,
-            ffi.NULL,
-            node_info_id.encode("utf-8"),
-        )
-
-        print(f"[DEBUG] get_node_info immediate rc={rc}")
-
-        wait_result = _wait_cb_raw(state, "get_node_info", timeout_s)
-        if wait_result.is_err():
-            return Err(wait_result.err())
-
-        cb_ret, cb_msg = wait_result.ok_value
-        print(f"[DEBUG] get_node_info callback ret={cb_ret}, msg={cb_msg}")
-
-        return Ok((rc, cb_ret, cb_msg))
-    
 def main():
     config = {
         "logLevel": "DEBUG",
@@ -412,6 +410,7 @@ def main():
     print(node.subscribe_content_topic(topic))
     print(node.send_message(message))
     #print(node.get_available_node_info_ids())
+    #print(node.debug_get_available_configs())
     print(node.stop_node())
     print(node.destroy())
 
