@@ -306,7 +306,7 @@ class NodeWrapper:
         request_id = cb_msg.decode("utf-8") if cb_msg else ""
         return Ok(request_id)
 
-    def get_available_node_info_ids(self, *, timeout_s: float = 20.0) -> Result[int, str]:
+    def get_available_node_info_ids(self, *, timeout_s: float = 20.0) -> Result[list[str], str]:
         state = _new_cb_state()
         cb = self._make_waiting_cb(state)
 
@@ -315,8 +315,8 @@ class NodeWrapper:
             cb,
             ffi.NULL,
         )
-        if rc < 0:
-            return Err(f"get_available_node_info_ids: immediate call failed (ret={rc})")
+        if rc != 0:
+            return Err("call failed")
 
         wait_result = _wait_cb_raw(state, "get_available_node_info_ids", timeout_s)
         if wait_result.is_err():
@@ -324,9 +324,22 @@ class NodeWrapper:
 
         cb_ret, cb_msg = wait_result.ok_value
         if cb_ret != 0:
-            return Err(f"get_available_node_info_ids: callback failed (ret={cb_ret}) msg={cb_msg!r}")
+            return Err("callback failed")
 
-        return Ok(rc)
+        if not cb_msg:
+            return Err("empty")
+
+        text = cb_msg.decode("utf-8").strip()
+
+        if not text.startswith("@[") or not text.endswith("]"):
+            return Err("bad format")
+
+        inner = text[2:-1].strip()
+        if not inner:
+            return Ok([])
+
+        items = [item.strip() for item in inner.split(",")]
+        return Ok(items)
 
     def get_node_info(self, node_info_id: str, *, timeout_s: float = 20.0) -> Result[dict, str]:
         state = _new_cb_state()
@@ -384,3 +397,4 @@ class NodeWrapper:
             return Err(f"get_available_configs: invalid json: {e}")
 
         return Ok(result)
+
