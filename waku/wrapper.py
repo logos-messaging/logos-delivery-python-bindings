@@ -310,13 +310,9 @@ class NodeWrapper:
         state = _new_cb_state()
         cb = self._make_waiting_cb(state)
 
-        rc = lib.logosdelivery_get_available_node_info_ids(
-            self.ctx,
-            cb,
-            ffi.NULL,
-        )
+        rc = lib.logosdelivery_get_available_node_info_ids(self.ctx, cb, ffi.NULL)
         if rc != 0:
-            return Err("call failed")
+            return Err("fail")
 
         wait_result = _wait_cb_raw(state, "get_available_node_info_ids", timeout_s)
         if wait_result.is_err():
@@ -324,23 +320,15 @@ class NodeWrapper:
 
         cb_ret, cb_msg = wait_result.ok_value
         if cb_ret != 0:
-            return Err("callback failed")
-
-        if not cb_msg:
-            return Err("empty")
+            return Err("fail")
 
         text = cb_msg.decode("utf-8").strip()
 
-        if not text.startswith("@[") or not text.endswith("]"):
-            return Err("bad format")
+        # simple parse
+        inner = text.replace("@[", "").replace("]", "").strip()
 
-        inner = text[2:-1].strip()
-        if not inner:
-            return Ok([])
-
-        items = [item.strip() for item in inner.split(",")]
-        return Ok(items)
-
+        return Ok([] if not inner else [x.strip() for x in inner.split(",")])
+    
     def get_node_info(self, node_info_id: str, *, timeout_s: float = 20.0) -> Result[dict, str]:
         state = _new_cb_state()
         cb = self._make_waiting_cb(state)
