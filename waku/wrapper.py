@@ -312,7 +312,7 @@ class NodeWrapper:
 
         rc = lib.logosdelivery_get_available_node_info_ids(self.ctx, cb, ffi.NULL)
         if rc != 0:
-            return Err("fail")
+            return Err(f"get_available_node_info_ids: immediate call failed (ret={rc})")
 
         wait_result = _wait_cb_raw(state, "get_available_node_info_ids", timeout_s)
         if wait_result.is_err():
@@ -320,15 +320,15 @@ class NodeWrapper:
 
         cb_ret, cb_msg = wait_result.ok_value
         if cb_ret != 0:
-            return Err("fail")
+            return Err(f"get_available_node_info_ids: callback failed (ret={cb_ret})")
+        if not cb_msg:
+            return Err("get_available_node_info_ids: empty response")
 
-        text = cb_msg.decode("utf-8").strip()
+        try:
+            return Ok(json.loads(cb_msg.decode("utf-8").strip().lstrip("@")))
+        except Exception as e:
+            return Err(f"get_available_node_info_ids: invalid response: {e}")
 
-        # simple parse
-        inner = text.replace("@[", "").replace("]", "").strip()
-
-        return Ok([] if not inner else [x.strip() for x in inner.split(",")])
-    
     def get_node_info(self, node_info_id: str, *, timeout_s: float = 20.0) -> Result[dict, str]:
         state = _new_cb_state()
         cb = self._make_waiting_cb(state)
