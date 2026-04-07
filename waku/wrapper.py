@@ -119,7 +119,7 @@ def _wait_cb_ok(state, op_name: str, timeout_s: float = 20.0) -> Result[int, str
 
     cb_ret, cb_msg = wait_result.ok_value
     if cb_ret != 0:
-        return Err(f"{op_name}: callback failed (ret={cb_ret}) msg={cb_msg!r}")
+        return Err(f"callback failed in _wait_cb_ok: {op_name} (ret={cb_ret}) msg={cb_msg!r}")
 
     return Ok(cb_ret)
 
