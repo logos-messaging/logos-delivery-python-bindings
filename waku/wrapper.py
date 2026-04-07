@@ -97,7 +97,11 @@ def _new_cb_state():
     }
 
 
-def _wait_cb_raw(state, op_name: str, timeout_s: float = 20.0):
+def _wait_cb_raw(
+    state,
+    op_name: str,
+    timeout_s: float = 20.0,
+) -> Result[tuple[int, bytes], str]:
     ok = state["done"].wait(timeout_s)
     if not ok:
         return Err(f"{op_name}: timeout after {timeout_s}s")
