@@ -254,6 +254,30 @@ class NodeWrapper:
 
         return self.destroy(timeout_s=timeout_s)
 
+    def destroy_keep_ctx(self, *, timeout_s: float = 20.0) -> Result[int, str]:
+        """Destroy the node without nilling self.ctx afterwards.
+
+        Intended for library-contract tests that need the dangling-but-non-nil
+        pointer to actually reach the C side after destroy() — for example, to
+        verify that logosdelivery_send rejects a destroyed handle on its own
+        rather than relying on the binding's defensive nil-out.
+        
+        added for the S01 tests
+        """
+        state = _new_cb_state()
+        cb = self._make_waiting_cb(state)
+
+        rc = lib.logosdelivery_destroy(self.ctx, cb, ffi.NULL)
+        if rc != 0:
+            return Err(f"destroy_keep_ctx: immediate call failed (ret={rc})")
+
+        wait_result = _wait_cb_ok(state, "destroy_keep_ctx", timeout_s)
+        if wait_result.is_err():
+            return Err(wait_result.err())
+
+        # Deliberately NOT setting self.ctx = ffi.NULL — see docstring.
+        return wait_result
+
     def subscribe_content_topic(self, content_topic: str, *, timeout_s: float = 20.0) -> Result[int, str]:
         state = _new_cb_state()
         cb = self._make_waiting_cb(state)
@@ -389,4 +413,3 @@ class NodeWrapper:
             return Err(f"get_available_configs: invalid json: {e}")
 
         return Ok(result)
-
