@@ -80,6 +80,30 @@ int logosdelivery_get_available_configs(
     FFICallBack callback,
     void *userData
 );
+
+int logosdelivery_channel_create(
+    void *ctx,
+    FFICallBack callback,
+    void *userData,
+    const char *channelId,
+    const char *contentTopic,
+    const char *senderId
+);
+
+int logosdelivery_channel_send(
+    void *ctx,
+    FFICallBack callback,
+    void *userData,
+    const char *channelId,
+    const char *messageJson
+);
+
+int logosdelivery_channel_close(
+    void *ctx,
+    FFICallBack callback,
+    void *userData,
+    const char *channelId
+);
 """
 )
 
@@ -413,3 +437,152 @@ class NodeWrapper:
             return Err(f"get_available_configs: invalid json: {e}")
 
         return Ok(result)
+
+    def channel_create(
+        self,
+        channel_id: str,
+        content_topic: str,
+        sender_id: str,
+        *,
+        timeout_s: float = 20.0,
+    ) -> Result[str, str]:
+        state = _new_cb_state()
+        cb = self._make_waiting_cb(state)
+
+        rc = lib.logosdelivery_channel_create(
+            self.ctx,
+            cb,
+            ffi.NULL,
+            channel_id.encode("utf-8"),
+            content_topic.encode("utf-8"),
+            sender_id.encode("utf-8"),
+        )
+        if rc != 0:
+            return Err(f"channel_create: immediate call failed (ret={rc})")
+
+        wait_result = _wait_cb_raw(state, f"channel_create({channel_id})", timeout_s)
+        if wait_result.is_err():
+            return Err(wait_result.err())
+
+        cb_ret, cb_msg = wait_result.ok_value
+        if cb_ret != 0:
+            return Err(cb_msg.decode("utf-8") if cb_msg else f"channel_create({channel_id}): callback failed (ret={cb_ret})")
+
+        created_channel_id = cb_msg.decode("utf-8") if cb_msg else ""
+        return Ok(created_channel_id)
+
+    def channel_send(self, channel_id: str, message: dict, *, timeout_s: float = 20.0) -> Result[str, str]:
+        state = _new_cb_state()
+        cb = self._make_waiting_cb(state)
+
+        message_json = json.dumps(message, separators=(",", ":"), ensure_ascii=False)
+
+        rc = lib.logosdelivery_channel_send(
+            self.ctx,
+            cb,
+            ffi.NULL,
+            channel_id.encode("utf-8"),
+            message_json.encode("utf-8"),
+        )
+        if rc != 0:
+            return Err(f"channel_send: immediate call failed (ret={rc})")
+
+        wait_result = _wait_cb_raw(state, f"channel_send({channel_id})", timeout_s)
+        if wait_result.is_err():
+            return Err(wait_result.err())
+
+        cb_ret, cb_msg = wait_result.ok_value
+        if cb_ret != 0:
+            return Err(cb_msg.decode("utf-8") if cb_msg else f"channel_send({channel_id}): callback failed (ret={cb_ret})")
+
+        channel_req_id = cb_msg.decode("utf-8") if cb_msg else ""
+        return Ok(channel_req_id)
+
+    def channel_close(self, channel_id: str, *, timeout_s: float = 20.0) -> Result[int, str]:
+        state = _new_cb_state()
+        cb = self._make_waiting_cb(state)
+
+        rc = lib.logosdelivery_channel_close(
+            self.ctx,
+            cb,
+            ffi.NULL,
+            channel_id.encode("utf-8"),
+        )
+        if rc != 0:
+            return Err(f"channel_close: immediate call failed (ret={rc})")
+
+        wait_result = _wait_cb_raw(state, f"channel_close({channel_id})", timeout_s)
+        if wait_result.is_err():
+            return Err(wait_result.err())
+
+        cb_ret, cb_msg = wait_result.ok_value
+        if cb_ret != 0:
+            return Err(cb_msg.decode("utf-8") if cb_msg else f"channel_close({channel_id}): callback failed (ret={cb_ret})")
+
+        return Ok(cb_ret)
+
+
+# ---------------------------------------------------------------------------
+# TEMPORARY manual smoke test for the channel wrappers.
+# Run: python -m waku.wrapper   (from the repo root, with lib/liblogosdelivery.so built)
+# Remove before merging.
+# ---------------------------------------------------------------------------
+if __name__ == "__main__":
+    import base64
+    import socket
+
+    def _free_port() -> int:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("", 0))
+            return s.getsockname()[1]
+
+    def _show(label, result):
+        tag = "OK " if result.is_ok() else "ERR"
+        value = result.ok_value if result.is_ok() else result.err()
+        print(f"[{tag}] {label}: {value!r}")
+
+    config = {
+        "logLevel": "INFO",
+        "listenAddress": "0.0.0.0",
+        "tcpPort": _free_port(),
+        "discv5UdpPort": _free_port(),
+        "restPort": _free_port(),
+        "restAddress": "0.0.0.0",
+        "clusterId": "198",
+        "relay": True,
+        "store": False,
+        "filter": False,
+        "lightpush": False,
+        "peerExchange": False,
+        "discv5Discovery": False,
+    }
+
+    CHANNEL_ID = "smoke-channel"
+    CONTENT_TOPIC = "/test/1/channel/proto"
+    SENDER_ID = "smoke-sender"
+
+    node_result = NodeWrapper.create_and_start(config)
+    if node_result.is_err():
+        print(f"[ERR] create_and_start: {node_result.err()!r}")
+        raise SystemExit(1)
+    node = node_result.ok_value
+    print("[OK ] node created and started")
+
+    try:
+        # RC01: create, then duplicate create rejected.
+        _show("channel_create", node.channel_create(CHANNEL_ID, CONTENT_TOPIC, SENDER_ID))
+        _show("channel_create (duplicate)", node.channel_create(CHANNEL_ID, CONTENT_TOPIC, SENDER_ID))
+
+        # RC02: send on unknown channel.
+        payload = base64.b64encode(b"hello channel").decode("ascii")
+        _show("channel_send (unknown id)", node.channel_send("no-such-channel", {"payload": payload, "ephemeral": False}))
+
+        # RC04: empty payload rejected; then a valid send returns a handle.
+        _show("channel_send (empty payload)", node.channel_send(CHANNEL_ID, {"payload": "", "ephemeral": False}))
+        _show("channel_send", node.channel_send(CHANNEL_ID, {"payload": payload, "ephemeral": False}))
+
+        # RC03: close, then close unknown rejected.
+        _show("channel_close", node.channel_close(CHANNEL_ID))
+        _show("channel_close (unknown id)", node.channel_close(CHANNEL_ID))
+    finally:
+        _show("stop_and_destroy", node.stop_and_destroy())
