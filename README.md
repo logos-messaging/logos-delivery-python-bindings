@@ -1,96 +1,53 @@
+# Logos Delivery Python Bindings
 
-# Waku Python Bindings
+Python bindings for `liblogosdelivery`, the C library of [logos-delivery](https://github.com/logos-messaging/logos-delivery). `waku/wrapper.py` binds its C ABI with cffi; `NodeWrapper` is the entry point.
 
-## Introduction
+The binding loads the library from `lib/` next to the `waku` package, so use it from a checkout of this repo.
 
-Exposes a Waku module that can be used within Python projects.
-It is fundamentally a wrapper around [nwaku](https://github.com/waku-org/nwaku)
+## Set up
 
-This repo has been tested with Python3 in Ubuntu.
-
-If need a different setup, don't hesitate con contact us on Discord. The Discord server can be found at https://docs.waku.org/.
-
-## Prepare the development environment
-
-Run the following commands from the root folder:
 ```bash
-mkdir venv
-python3 -m venv venv/
+python3 -m venv venv
 source venv/bin/activate
-./venv/bin/python -m pip install -r requiremets.txt
+pip install -r requiremets.txt
 ```
 
-## Create a Py-Waku package
+## Build the library
 
-Run the following commands from the root folder:
-```bash
-source venv/bin/activate
-./venv/bin/python3 -m build
-```
-
-## Test the package
-
-For that, we have a very simple example in `tests/waku_example.py`.
-
-In order to use the waku module, please install it from the local `dist/` folder, that can be created by following the
-instructions from the previous section.
-
-The following command is an example on how to install the local
-package to your local virtual env.
+`vendor/logos-delivery` pins the logos-delivery commit this binding targets. Build `liblogosdelivery` there (prerequisites in logos-delivery's [`library/BUILD.md`](https://github.com/logos-messaging/logos-delivery/blob/master/library/BUILD.md)) and copy it into `lib/`, where `wrapper.py` loads it as `lib/liblogosdelivery.so`:
 
 ```bash
-./venv/bin/python3 -m pip install dist/waku-0.0.1-cp310-cp310-linux_x86_64.whl
+git submodule update --init vendor/logos-delivery
+make -C vendor/logos-delivery liblogosdelivery
+cp vendor/logos-delivery/build/liblogosdelivery.so lib/
 ```
 
-Current limitations of nwaku cbindings do not allow you to use DNS name in the multiaddress of a peer you want to connect to.
-Due to that, we recommend to run another local node to connect to other peers and then connect to this local node from the py-waku.
+On macOS the build produces `liblogosdelivery.dylib`, so copy that and link it under the `.so` name:
 
 ```bash
-docker run -i -t -p 60000:60000 -p 9000:9000/udp -p 8646:8645 harbor.status.im/wakuorg/nwaku:v0.24.0 --dns-discovery:true --dns-discovery-url:enrtree://ANEDLO25QVUGJOUTQFRYKWX6P4Z4GKVESBMHML7DZ6YK4LGS5FC5O@prod.wakuv2.nodes.status.im --discv5-discovery --rest --rest-address=0.0.0.0
+cp vendor/logos-delivery/build/liblogosdelivery.dylib lib/
+ln -sf liblogosdelivery.dylib lib/liblogosdelivery.so
 ```
 
-Once this node is up, get the multiaddress
+## Use
 
-```bash
-LOCAL_PEER_MA=$(curl http://127.0.0.1:8646/debug/v1/info | jq -r ".listenAddresses[0]")
-NODEKEY=$(openssl rand -hex 32)
+From the repository root:
+
+```python
+from waku import NodeWrapper, version
+
+print(version())
+
+node = NodeWrapper.create_and_start(
+    {"mode": "Core", "clusterId": 198, "numShardsInNetwork": 1},
+    event_cb=lambda ret, msg: print(msg.decode()),
+).unwrap()
+print(node.get_connection_status().unwrap())
+node.stop_and_destroy()
 ```
 
-You can run the `tests/waku_example.py` now as
+Every method returns a `Result` from the [`result`](https://pypi.org/project/result/) package: `Ok` with the reply, or `Err` with the reason. `event_cb` runs on the library's event thread for every event in `EVENT_NAMES`.
 
-```bash
-./venv/bin/python3 tests/waku_example.py --peer ${LOCAL_PEER_MA} --key ${NODEKEY} -p 70000
-```
+## Update logos-delivery
 
-Apart from seeing messages going through the relay protocol, you can also publish a message and see it being received by the py-waku node
-
-```bash
-curl http://127.0.0.1:8646/relay/v1/messages/%2Fwaku%2F2%2Fdefault-waku%2Fproto -H "Content-Type: application/json" -d '{"payload": "'$(echo "Hello!" | base64)'", "contentTopic": "/hello/0/pywaku/plain"}'
-```
-
-## Update the libwaku.so library
-
-Given that `Py-Waku` conforms a wrapper around `libwaku.so`,
-it is likely that you would need to upgrade it.
-For that, you will need to update the submodule pointer
-to a more recent nwaku version:
-
-1. ```cd vendor/nwaku```
-2. Check out to the commit/tag as you wish
-
-Then, follow the following steps from the root folder
-to rebuild the `libwaku.so` library:
-
-```bash
-cd vendor/liblogosdelivery
-```
-```bash
-make liblogosdelivery -j8
-```
-```bash
-cd ../../
-```
-```bash
-cp vendor/liblogosdelivery/build/liblogosdelivery.so lib/
-```
-
+Check out the new commit in `vendor/logos-delivery`, rebuild the library as above, and update `waku/wrapper.py` if the C ABI changed.

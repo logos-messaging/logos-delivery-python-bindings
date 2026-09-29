@@ -4,4 +4,6 @@ waku.egg-info/
 waku/__pycache__/
 /vendor/
 data/
+lib/*
+!lib/.gitkeep
 
