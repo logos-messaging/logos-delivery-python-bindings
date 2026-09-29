@@ -1,8 +1,8 @@
 # Logos Delivery Python Bindings
 
-Python bindings for `liblogosdelivery`, the C library of [logos-delivery](https://github.com/logos-messaging/logos-delivery). `waku/wrapper.py` binds its C ABI with cffi; `NodeWrapper` is the entry point.
+Python bindings for `liblogosdelivery`, the C library of [logos-delivery](https://github.com/logos-messaging/logos-delivery). `logosdelivery/wrapper.py` binds its C ABI with cffi; `NodeWrapper` is the entry point.
 
-The binding loads the library from `lib/` next to the `waku` package, so use it from a checkout of this repo.
+The binding loads the library from `lib/` next to the `logosdelivery` package, so use it from a checkout of this repo.
 
 ## Set up
 
@@ -34,7 +34,7 @@ ln -sf liblogosdelivery.dylib lib/liblogosdelivery.so
 From the repository root:
 
 ```python
-from waku import NodeWrapper, version
+from logosdelivery import NodeWrapper, version
 
 print(version())
 
@@ -50,4 +50,4 @@ Every method returns a `Result` from the [`result`](https://pypi.org/project/res
 
 ## Update logos-delivery
 
-Check out the new commit in `vendor/logos-delivery`, rebuild the library as above, and update `waku/wrapper.py` if the C ABI changed.
+Check out the new commit in `vendor/logos-delivery`, rebuild the library as above, and update `logosdelivery/wrapper.py` if the C ABI changed.

@@ -1,5 +1,5 @@
 [project]
-name = "waku"
+name = "logosdelivery"
 version = "0.0.1"
 authors = [
   { name="Waku Dev Team", email="ivansete@status.im" },
@@ -14,4 +14,4 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["waku"]
+packages = ["logosdelivery"]

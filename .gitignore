@@ -1,7 +1,7 @@
 venv/
 dist/
-waku.egg-info/
-waku/__pycache__/
+logosdelivery.egg-info/
+logosdelivery/__pycache__/
 /vendor/
 data/
 lib/*
