@@ -1,5 +1,6 @@
 blinker==1.7.0
 build==1.0.3
+cbor2==6.1.4
 certifi==2023.7.22
 cffi==1.16.0
 charset-normalizer==3.3.2
@@ -28,6 +29,7 @@ pyproject_hooks==1.0.0
 readme-renderer==42.0
 requests==2.31.0
 requests-toolbelt==1.0.0
+result==0.17.0
 rfc3986==2.0.0
 rich==13.6.0
 SecretStorage==3.3.3
