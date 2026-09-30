@@ -1,15 +1,17 @@
 [project]
-name = "waku"
+name = "logosdelivery"
 version = "0.0.1"
 authors = [
   { name="Waku Dev Team", email="ivansete@status.im" },
 ]
-description = "A small example package"
+description = "Python bindings for liblogosdelivery"
 readme = "README.md"
 requires-python = ">=3.10"
+dependencies = ["cffi>=1.16.0", "cbor2>=6.1.4", "result>=0.17.0"]
 
 [build-system]
-requires = ["setuptools", "wheel", "cffi>=1.0.0", "Cython"]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-py-modules = []
+packages = ["logosdelivery"]
